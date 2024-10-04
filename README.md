@@ -49,7 +49,11 @@ The `RealtimeAPIWrapper` component triggers various **Action** events, enabling 
 - `OnRateLimitsUpdated`: Triggered when rate limits are updated by the API.
 
 ## ToDo
-This project is still very much a work in progress. I'd like to extend it in the coming days to add VAD and interruption handling (no guarantees, though).
+This project is still very much a work in progress. I'd like to extend it in the coming days to add:
+
+- [ ] VAD (no guarantees, though)
+- [x] Interruption handling
+
 
 ## Disclaimer
 This project serves as an example of integrating OpenAI's Realtime API with Unity. It is a prototype, so feel free to extend its functionality or submit a PR for improvements.
