@@ -21,7 +21,7 @@ Tested with Unity version 2022.3.45f1.
 ### Setup (coming soon)
 1. Download the latest release `.unitypackage`.
 2. Import it into your own project, e.g., via `Assets > Import Package`.
-3. Either open the `OpenAI-Realtime-API-Example` scene or add the necessary Prefabs to your own scene.
+3. Either open the `DemoScene` scene or add the necessary Prefabs to your own scene.
 
 ### Using OpenAI Realtime API in your own scene
 1. Add the `RealtimeAPIWrapper` Prefab to your scene.
