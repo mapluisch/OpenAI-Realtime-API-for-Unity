@@ -142,6 +142,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   sampleRate: 24000
+  interruptResponseOnNewRecording: 1
 --- !u!1 &8086852912749008722
 GameObject:
   m_ObjectHideFlags: 0

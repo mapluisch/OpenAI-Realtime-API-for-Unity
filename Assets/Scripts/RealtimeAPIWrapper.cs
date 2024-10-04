@@ -14,6 +14,7 @@ public class RealtimeAPIWrapper : MonoBehaviour
 
     private StringBuilder messageBuffer = new StringBuilder();
     private StringBuilder transcriptBuffer = new StringBuilder();
+    private bool isResponseInProgress = false;
 
     public static event Action OnWebSocketConnected;
     public static event Action OnWebSocketClosed;
@@ -29,6 +30,7 @@ public class RealtimeAPIWrapper : MonoBehaviour
     public static event Action OnRateLimitsUpdated;
     public static event Action OnResponseOutputItemAdded;
     public static event Action OnResponseContentPartAdded;
+    public static event Action OnResponseCancelled;
 
     private async void Start()
     {
@@ -59,8 +61,34 @@ public class RealtimeAPIWrapper : MonoBehaviour
         }
     }
 
+    private async void SendCancelEvent()
+    {
+        if (ws.State == WebSocketState.Open && isResponseInProgress)
+        {
+
+            var cancelMessage = new
+            {
+                type = "response.cancel"
+            };
+
+            string jsonString = Newtonsoft.Json.JsonConvert.SerializeObject(cancelMessage);
+            byte[] messageBytes = Encoding.UTF8.GetBytes(jsonString);
+            await ws.SendAsync(new ArraySegment<byte>(messageBytes), WebSocketMessageType.Text, true, CancellationToken.None);
+
+            Debug.Log("Sent response.cancel event.");
+            OnResponseCancelled?.Invoke();
+            isResponseInProgress = false;
+        }
+    }
+
+
     private async void SendAudioToAPI(string base64AudioData)
     {
+        if (isResponseInProgress)
+        {
+            SendCancelEvent();
+        }
+
         if (ws.State == WebSocketState.Open)
         {
             var eventMessage = new
@@ -105,7 +133,7 @@ public class RealtimeAPIWrapper : MonoBehaviour
 
     private async Task ReceiveMessages()
     {
-        var buffer = new byte[8192 * 4];
+        var buffer = new byte[1024 * 256]; //256kb - feel free to tinker around here
 
         while (ws.State == WebSocketState.Open)
         {
@@ -148,11 +176,16 @@ public class RealtimeAPIWrapper : MonoBehaviour
                         }
                         else if (messageType == "response.done")
                         {
+                            if (!audioController.IsAudioPlaying())
+                            {
+                                isResponseInProgress = false;
+                            }
                             OnResponseDone?.Invoke();
                         }
                         else if (messageType == "response.created")
                         {
                             transcriptBuffer.Clear();
+                            isResponseInProgress = true;
                             OnResponseCreated?.Invoke();
                         }
                         else if (messageType == "session.created")
@@ -202,6 +235,7 @@ public class RealtimeAPIWrapper : MonoBehaviour
             }
         }
     }
+
 
     private async void OnApplicationQuit()
     {

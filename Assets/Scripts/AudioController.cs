@@ -1,14 +1,16 @@
 using System;
-using UnityEngine;
 using System.Collections.Generic;
+using UnityEngine;
 
 [RequireComponent(typeof(AudioSource))]
 public class AudioController : MonoBehaviour
 {
     private AudioSource audioSource;
     public int sampleRate = 24000;
+    public bool interruptResponseOnNewRecording = false;
     private bool isPlayingAudio = false;
-    private List<byte> audioBuffer = new List<byte>();
+    private bool cancelPending = false;
+    private List<byte[]> audioBuffer = new List<byte[]>();
 
     public delegate void OnAudioRecorded(string base64Audio);
     public event OnAudioRecorded AudioRecorded;
@@ -21,7 +23,11 @@ public class AudioController : MonoBehaviour
 
     public void StartRecording()
     {
+        if (interruptResponseOnNewRecording) CancelAudioPlayback();
+
         if (Microphone.devices.Length == 0) return;
+
+        ResetCancelPending();
 
         string microphoneDevice = Microphone.devices[0];
         audioSource.clip = Microphone.Start(microphoneDevice, false, 10, sampleRate);
@@ -47,7 +53,13 @@ public class AudioController : MonoBehaviour
 
     public void EnqueueAudioData(byte[] pcmAudioData)
     {
-        audioBuffer.AddRange(pcmAudioData);
+        if (cancelPending)
+        {
+            Debug.Log("Audio playback cancelled, not enqueuing new audio data.");
+            return;
+        }
+
+        audioBuffer.Add(pcmAudioData);
 
         if (!isPlayingAudio)
         {
@@ -57,24 +69,53 @@ public class AudioController : MonoBehaviour
 
     private void PlayBufferedAudio()
     {
+        if (cancelPending)
+        {
+            ClearAudioBuffer();
+            return;
+        }
+
         if (audioBuffer.Count == 0)
         {
-            Debug.Log("Audio buffer is empty.");
+            Debug.Log("Audio buffer is empty, nothing to play.");
             isPlayingAudio = false;
             return;
         }
 
         isPlayingAudio = true;
-        float[] floatData = ConvertPCM16ToFloat(audioBuffer.ToArray());
+        byte[] pcmAudioData = audioBuffer[0];
+        audioBuffer.RemoveAt(0);
+
+        float[] floatData = ConvertPCM16ToFloat(pcmAudioData);
         AudioClip clip = AudioClip.Create("BufferedAudio", floatData.Length, 1, sampleRate, false);
         clip.SetData(floatData, 0);
         audioSource.clip = clip;
         audioSource.Play();
 
         Debug.Log("Playing buffered audio...");
-        audioBuffer.Clear();
         Invoke("PlayBufferedAudio", clip.length);
     }
+
+    public void CancelAudioPlayback()
+    {
+        Debug.Log("Cancelling audio playback.");
+        cancelPending = true;
+        ClearAudioBuffer();
+    }
+
+    private void ClearAudioBuffer()
+    {
+        Debug.Log("Clearing audio buffer.");
+        audioBuffer.Clear();
+        audioSource.Stop();
+        isPlayingAudio = false;
+    }
+
+    public bool IsAudioPlaying()
+    {
+        return audioSource.isPlaying || audioBuffer.Count > 0;
+    }
+
 
     private float[] ConvertPCM16ToFloat(byte[] pcmAudioData)
     {
@@ -97,6 +138,12 @@ public class AudioController : MonoBehaviour
             pcm16Audio[i * 2] = bytes[0];
             pcm16Audio[i * 2 + 1] = bytes[1];
         }
-        return System.Convert.ToBase64String(pcm16Audio);
+        return Convert.ToBase64String(pcm16Audio);
+    }
+
+    public void ResetCancelPending()
+    {
+        Debug.Log("Resetting cancel state.");
+        cancelPending = false;
     }
 }
