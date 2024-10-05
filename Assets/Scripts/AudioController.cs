@@ -15,19 +15,22 @@ public class AudioController : MonoBehaviour
     private bool isVADRecording = false;
     private float silenceTimer = 0f;
     private int lastSamplePosition = 0;
+    private int lastVADSamplePosition = 0;
     private List<float> vadAudioData = new List<float>();
     private AudioClip microphoneClip;
     private AudioSource audioSource;
     private bool isPlayingAudio = false;
     private bool cancelPending = false;
     private Queue<byte[]> audioBuffer = new Queue<byte[]>();
-    public static event Action<string> OnAudioRecorded;
     private string microphoneDevice;
     private bool ignoreInitialSpike = false;
-    public float currentVolumeLevel { get; private set; } = 0f;
+    public float currentVolumeLevel = 0f;
     public float[] frequencyData { get; private set; }
     public int fftSampleSize = 1024;
     public float[] aiFrequencyData { get; private set; }
+    public static event Action<string> OnAudioRecorded;
+    public static event Action OnVADRecordingStarted;
+    public static event Action OnVADRecordingEnded;
 
     private void Start()
     {
@@ -64,10 +67,8 @@ public class AudioController : MonoBehaviour
 
     public void StartRecording()
     {
-        if (interruptResponseOnNewRecording)
-            CancelAudioPlayback();
-        if (Microphone.devices.Length == 0)
-            return;
+        if (interruptResponseOnNewRecording) CancelAudioPlayback();
+        if (Microphone.devices.Length == 0) return;
         ResetCancelPending();
         microphoneDevice = Microphone.devices[0];
         microphoneClip = Microphone.Start(microphoneDevice, false, 10, sampleRate);
@@ -94,8 +95,7 @@ public class AudioController : MonoBehaviour
 
     public void StartMicrophone()
     {
-        if (Microphone.devices.Length == 0)
-            return;
+        if (Microphone.devices.Length == 0) return;
         microphoneDevice = Microphone.devices[0];
         microphoneClip = Microphone.Start(microphoneDevice, true, 10, sampleRate);
         lastSamplePosition = 0;
@@ -103,10 +103,7 @@ public class AudioController : MonoBehaviour
 
     public void StopMicrophone()
     {
-        if (Microphone.IsRecording(microphoneDevice))
-        {
-            Microphone.End(microphoneDevice);
-        }
+        if (Microphone.IsRecording(microphoneDevice)) Microphone.End(microphoneDevice);
         frequencyData = null;
     }
 
@@ -158,143 +155,59 @@ public class AudioController : MonoBehaviour
         lastSamplePosition = micPosition;
     }
 
+
     private void PerformVAD()
     {
-        if (!Microphone.IsRecording(microphoneDevice))
-        {
-            lastSamplePosition = Microphone.GetPosition(microphoneDevice);
-            return;
-        }
-        int micPosition = Microphone.GetPosition(microphoneDevice);
-        int sampleDiff = micPosition - lastSamplePosition;
-        if (sampleDiff < 0)
-        {
-            sampleDiff += microphoneClip.samples;
-        }
-        if (sampleDiff == 0)
-        {
-            return;
-        }
-        float[] samples = new float[sampleDiff];
-        int startPosition = lastSamplePosition;
-        if (startPosition + sampleDiff <= microphoneClip.samples)
-        {
-            microphoneClip.GetData(samples, startPosition);
-        }
-        else
-        {
-            int samplesToEnd = microphoneClip.samples - startPosition;
-            int samplesFromStart = sampleDiff - samplesToEnd;
-            float[] samplesPart1 = new float[samplesToEnd];
-            float[] samplesPart2 = new float[samplesFromStart];
-            microphoneClip.GetData(samplesPart1, startPosition);
-            microphoneClip.GetData(samplesPart2, 0);
-            Array.Copy(samplesPart1, 0, samples, 0, samplesToEnd);
-            Array.Copy(samplesPart2, 0, samples, samplesToEnd, samplesFromStart);
-        }
-        float maxVolume = 0f;
-        foreach (var sample in samples)
-        {
-            float absSample = Mathf.Abs(sample);
-            if (absSample > maxVolume)
-            {
-                maxVolume = absSample;
-            }
-        }
-        currentVolumeLevel = maxVolume;
-        if (maxVolume > vadThreshold)
+        if (!Microphone.IsRecording(microphoneDevice)) return;
+
+        if (currentVolumeLevel > vadThreshold && !isVADRecording)
         {
             silenceTimer = 0f;
-            if (ignoreInitialMicrophoneFramesOnVAD)
-            {
-                if (ignoreInitialSpike)
-                {
-                    ignoreFrameCount++;
-                    if (ignoreFrameCount >= framesToIgnore)
-                    {
-                        ignoreInitialSpike = false;
-                        ignoreFrameCount = 0;
-                    }
-                }
-                else
-                {
-                    if (!isVADRecording)
-                    {
-                        StartVADRecording();
-                    }
-                    AppendVADData(samples);
-                }
-            }
-            else
-            {
-                if (!isVADRecording)
-                {
-                    StartVADRecording();
-                }
-                AppendVADData(samples);
-            }
+            StartVADRecording();
         }
-        else
+        else if (isVADRecording)
         {
-            if (isVADRecording)
-            {
-                silenceTimer += sampleDiff / (float)sampleRate;
-                if (silenceTimer >= vadSilenceDuration)
-                {
-                    StopVADRecording();
-                }
-                else
-                {
-                    AppendVADData(samples);
-                }
-            }
-            else
-            {
-                if (ignoreInitialMicrophoneFramesOnVAD)
-                {
-                    ignoreInitialSpike = true;
-                    ignoreFrameCount = 0;
-                }
-            }
+            silenceTimer += Time.deltaTime;
+            if (silenceTimer >= vadSilenceDuration) StopVADRecording();
         }
-        lastSamplePosition = micPosition;
     }
 
     private void StartVADRecording()
     {
+        if (interruptResponseOnNewRecording && !isVADRecording) CancelAudioPlayback();
+        ResetCancelPending();
         isVADRecording = true;
-        vadAudioData.Clear();
-    }
-
-    private void AppendVADData(float[] samples)
-    {
-        vadAudioData.AddRange(samples);
+        silenceTimer = 0f;
+        microphoneClip = Microphone.Start(microphoneDevice, false, 10, sampleRate);
+        OnVADRecordingStarted?.Invoke();
     }
 
     private void StopVADRecording()
     {
-        isVADRecording = false;
-        silenceTimer = 0f;
-        if (vadAudioData.Count > 0)
+        if (Microphone.IsRecording(microphoneDevice))
         {
-            float[] audioData = vadAudioData.ToArray();
+            int micPosition = Microphone.GetPosition(microphoneDevice);
+            float[] audioData = new float[micPosition];
+            microphoneClip.GetData(audioData, 0);
             string base64AudioData = ConvertFloatToPCM16AndBase64(audioData);
             OnAudioRecorded?.Invoke(base64AudioData);
         }
-        vadAudioData.Clear();
+
+        isVADRecording = false;
+        silenceTimer = 0f;
+        OnVADRecordingEnded?.Invoke();
+
+        Microphone.End(microphoneDevice);
+        StartMicrophone();
+
+        ignoreInitialSpike = true;
     }
 
     public void EnqueueAudioData(byte[] pcmAudioData)
     {
-        if (cancelPending)
-        {
-            return;
-        }
+        if (cancelPending) return;
         audioBuffer.Enqueue(pcmAudioData);
-        if (!isPlayingAudio)
-        {
-            PlayBufferedAudio();
-        }
+        if (!isPlayingAudio) PlayBufferedAudio();
     }
 
     private void PlayBufferedAudio()

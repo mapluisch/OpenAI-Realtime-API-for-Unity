@@ -22,12 +22,14 @@ public class DemoIntegration : MonoBehaviour
 
     int logCountLimit = 15;
 
-    float maxFrequencyAmplitude = 0.1f;
+    float maxFrequencyAmplitude = 4f;
     float aiMaxFrequencyAmplitude = 0.1f;
 
     bool isRecording = false;
     List<string> logMessages = new List<string>();
     List<string> conversationMessages = new List<string>();
+    string currentConversationLine = "";
+
 
     float[] userBarAmplitudes;
     float[] aiBarAmplitudes;
@@ -43,6 +45,10 @@ public class DemoIntegration : MonoBehaviour
         RealtimeAPIWrapper.OnResponseDone += OnResponseDone;
         RealtimeAPIWrapper.OnTranscriptReceived += OnTranscriptReceived;
         RealtimeAPIWrapper.OnResponseCreated += OnResponseCreated;
+
+        AudioController.OnVADRecordingStarted += OnVADRecordingStarted;
+        AudioController.OnVADRecordingEnded += OnVADRecordingEnded;
+
         manualListeningButton.onClick.AddListener(OnManualListeningMode);
         vadListeningButton.onClick.AddListener(OnVADListeningMode);
 
@@ -190,6 +196,9 @@ public class DemoIntegration : MonoBehaviour
         UpdateRecordButton();
     }
 
+    private void OnVADRecordingStarted() => AddLogMessage("VAD recording started...");
+    private void OnVADRecordingEnded() => AddLogMessage("VAD recording ended.");
+
     private void UpdateRecordButton()
     {
         if (audioController.listeningMode == ListeningMode.PushToTalk)
@@ -329,9 +338,18 @@ public class DemoIntegration : MonoBehaviour
 
     private void OnConversationItemCreated()
     {
-        conversationText.text = "";
         AddLogMessage("conversation item created.");
+
+        if (!string.IsNullOrEmpty(currentConversationLine))
+        {
+            if (conversationMessages.Count >= logCountLimit) conversationMessages.RemoveAt(0);
+            conversationMessages.Add(currentConversationLine);
+        }
+
+        currentConversationLine = "";
+        UpdateConversationText();
     }
+
 
     private void OnResponseDone()
     {
@@ -340,17 +358,36 @@ public class DemoIntegration : MonoBehaviour
 
     private void OnTranscriptReceived(string transcriptPart)
     {
-        if (conversationMessages.Count >= logCountLimit) conversationMessages.RemoveAt(0);
+        if (string.IsNullOrEmpty(currentConversationLine))
+        {
+            string timestamp = System.DateTime.Now.ToString("HH:mm:ss");
+            currentConversationLine = $"{timestamp}\t";
+        }
 
-        string timestamp = System.DateTime.Now.ToString("HH:mm:ss");
-        conversationMessages.Add($"{timestamp}\t{transcriptPart}");
+        currentConversationLine += transcriptPart;
 
-        UpdateConversationText();
+        UpdateConversationTextInPlace();
+    }
+
+
+    private void UpdateConversationTextInPlace()
+    {
+        conversationText.text = "";
+
+        for (int i = 0; i < conversationMessages.Count; i++)
+        {
+            float alpha = Mathf.Lerp(0.2f, 1.0f, (float)(i + 1) / conversationMessages.Count);
+            string messageWithAlpha = $"<color=#{ColorUtility.ToHtmlStringRGBA(new Color(0, 0, 0, alpha))}>{conversationMessages[i]}</color>";
+            conversationText.text += messageWithAlpha + "\n";
+        }
+
+        conversationText.text += $"<color=#{ColorUtility.ToHtmlStringRGBA(new Color(0, 0, 0, 1.0f))}>{currentConversationLine}</color>";
     }
 
     private void UpdateConversationText()
     {
         conversationText.text = "";
+
         for (int i = 0; i < conversationMessages.Count; i++)
         {
             float alpha = Mathf.Lerp(0.2f, 1.0f, (float)(i + 1) / conversationMessages.Count);
