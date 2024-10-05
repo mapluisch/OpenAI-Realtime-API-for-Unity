@@ -51,7 +51,7 @@ The `RealtimeAPIWrapper` component triggers various **Action** events, enabling 
 ## ToDo
 This project is still very much a work in progress. I'd like to extend it in the coming days to add:
 
-- [] Server-Side VAD (no guarantees, though)
+- [ ] Server-Side VAD (no guarantees, though)
 - [x] Client-Side VAD (very, very basic)
 - [x] Interruption handling
 
