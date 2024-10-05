@@ -14,7 +14,7 @@ This (WIP) project integrates the API into a Unity application, allowing users t
 
 Specifically, this package allows you to integrate real-time low-latency conversations with OpenAI's TTS/STT conversational models (via push-to-talk).
 
-Tested with Unity version 2022.3.45f1.
+Tested with Unity version 2022.3.45f1 (on macOS, but it should work on every platform that supports `Newtonsoft.Json`).
 
 ## Demo Video (coming soon)
 
