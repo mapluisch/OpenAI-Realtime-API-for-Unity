@@ -81,10 +81,13 @@ public class AudioController : MonoBehaviour
             int micPosition = Microphone.GetPosition(microphoneDevice);
             int samples = micPosition;
             float[] audioData = new float[samples];
-            microphoneClip.GetData(audioData, 0);
-            Microphone.End(microphoneDevice);
-            string base64AudioData = ConvertFloatToPCM16AndBase64(audioData);
-            OnAudioRecorded?.Invoke(base64AudioData);
+            if (microphoneClip != null && micPosition != 0)
+            {
+                microphoneClip.GetData(audioData, 0);
+                Microphone.End(microphoneDevice);
+                string base64AudioData = ConvertFloatToPCM16AndBase64(audioData);
+                OnAudioRecorded?.Invoke(base64AudioData);
+            }
         }
         frequencyData = null;
     }
