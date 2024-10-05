@@ -1467,7 +1467,7 @@ GameObject:
   - component: {fileID: 2102697406802077727}
   - component: {fileID: 751159222626287672}
   m_Layer: 5
-  m_Name: RecordButtonText
+  m_Name: PushToTalkButtonText
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -3150,9 +3150,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   eventsText: {fileID: 4026597692773154623}
   conversationText: {fileID: 2825327695736519003}
-  recordButton: {fileID: 2178975479906841517}
+  pushToTalkButton: {fileID: 2178975479906841517}
   connectButton: {fileID: 8428551282407799376}
-  recordButtonText: {fileID: 751159222626287672}
+  pushToTalkButtonText: {fileID: 751159222626287672}
   connectButtonText: {fileID: 1406898186369018329}
   audioController: {fileID: 0}
   listeningModeDropdown: {fileID: 4782741342573785494}
@@ -4022,7 +4022,7 @@ GameObject:
   - component: {fileID: 4372295119489692941}
   - component: {fileID: 2178975479906841517}
   m_Layer: 5
-  m_Name: RecordButton
+  m_Name: PushToTalkButton
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

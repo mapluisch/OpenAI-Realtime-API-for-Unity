@@ -5,17 +5,22 @@ using System.Collections.Generic;
 
 public class DemoIntegration : MonoBehaviour
 {
+    [SerializeField] private AudioController audioController;
     [SerializeField] private TextMeshProUGUI eventsText;
     [SerializeField] private TextMeshProUGUI conversationText;
-    [SerializeField] private Button recordButton;
+    [SerializeField] private Button pushToTalkButton;
     [SerializeField] private Button connectButton;
-    [SerializeField] private TextMeshProUGUI recordButtonText;
+    [SerializeField] private TextMeshProUGUI pushToTalkButtonText;
     [SerializeField] private TextMeshProUGUI connectButtonText;
-    [SerializeField] private AudioController audioController;
-    [SerializeField] private TMP_Dropdown listeningModeDropdown;
+    [SerializeField] private Button manualListeningButton;
+    [SerializeField] private Button vadListeningButton;
+    [SerializeField] private TextMeshProUGUI manualListeningButtonText;
+    [SerializeField] private TextMeshProUGUI vadListeningButtonText;
 
     [SerializeField] private Image[] frequencyBars;
     [SerializeField] private Image[] aiFrequencyBars;
+
+    int logCountLimit = 15;
 
     float maxFrequencyAmplitude = 0.1f;
     float aiMaxFrequencyAmplitude = 0.1f;
@@ -29,7 +34,7 @@ public class DemoIntegration : MonoBehaviour
 
     private void Start()
     {
-        recordButton.onClick.AddListener(OnRecordButtonPressed);
+        pushToTalkButton.onClick.AddListener(OnRecordButtonPressed);
         RealtimeAPIWrapper.OnWebSocketConnected += OnWebSocketConnected;
         RealtimeAPIWrapper.OnWebSocketClosed += OnWebSocketClosed;
         RealtimeAPIWrapper.OnSessionCreated += OnSessionCreated;
@@ -37,9 +42,11 @@ public class DemoIntegration : MonoBehaviour
         RealtimeAPIWrapper.OnResponseDone += OnResponseDone;
         RealtimeAPIWrapper.OnTranscriptReceived += OnTranscriptReceived;
         RealtimeAPIWrapper.OnResponseCreated += OnResponseCreated;
-        listeningModeDropdown.onValueChanged.AddListener(OnListeningModeChanged);
+        manualListeningButton.onClick.AddListener(OnManualListeningMode);
+        vadListeningButton.onClick.AddListener(OnVADListeningMode);
+
+        UpdateListeningModeButtons();
         UpdateRecordButton();
-        UpdateListeningModeUI();
 
         userBarAmplitudes = new float[frequencyBars.Length];
         aiBarAmplitudes = new float[aiFrequencyBars.Length];
@@ -186,39 +193,90 @@ public class DemoIntegration : MonoBehaviour
     {
         if (audioController.listeningMode == ListeningMode.PushToTalk)
         {
-            recordButton.interactable = true;
+            pushToTalkButton.interactable = true;
             if (isRecording)
             {
-                recordButton.image.color = Color.red;
-                recordButtonText.text = "release to send";
-                recordButtonText.color = Color.white;
+                pushToTalkButton.image.color = Color.red;
+                pushToTalkButtonText.text = "release to send";
+                pushToTalkButtonText.color = Color.white;
             }
             else
             {
-                recordButton.image.color = new Color(236f / 255f, 236f / 255f, 241f / 255f);
-                recordButtonText.text = "push to talk";
-                recordButtonText.color = new Color(50f / 255f, 50f / 255f, 50f / 255f);
+                pushToTalkButton.image.color = new Color(236f / 255f, 236f / 255f, 241f / 255f);
+                pushToTalkButtonText.text = "push to talk";
+                pushToTalkButtonText.color = new Color(50f / 255f, 50f / 255f, 50f / 255f);
             }
         }
         else
         {
-            recordButton.interactable = false;
-            recordButton.image.color = Color.clear;
-            recordButtonText.text = "";
+            pushToTalkButton.interactable = false;
+            pushToTalkButton.image.color = Color.clear;
+            pushToTalkButtonText.text = "";
         }
     }
+
+    private void OnManualListeningMode()
+    {
+        audioController.listeningMode = ListeningMode.PushToTalk;
+        AddLogMessage("Manual listening mode activated (Push-to-Talk).");
+        UpdateListeningModeButtons();
+    }
+
+    private void OnVADListeningMode()
+    {
+        audioController.listeningMode = ListeningMode.VAD;
+        AddLogMessage("VAD listening mode activated.");
+        UpdateListeningModeButtons();
+    }
+
+    private void UpdateListeningModeButtons()
+    {
+        if (audioController.listeningMode == ListeningMode.PushToTalk)
+        {
+            SetButtonActive(manualListeningButton, manualListeningButtonText);
+            SetButtonInactive(vadListeningButton, vadListeningButtonText);
+        }
+        else if (audioController.listeningMode == ListeningMode.VAD)
+        {
+            SetButtonActive(vadListeningButton, vadListeningButtonText);
+            SetButtonInactive(manualListeningButton, manualListeningButtonText);
+        }
+    }
+
+    private void SetButtonActive(Button button, TextMeshProUGUI buttonText)
+    {
+        buttonText.color = Color.white;
+
+        ColorBlock cb = button.colors;
+        cb.normalColor = cb.selectedColor = new Color(15f / 255f, 15f / 255f, 15f / 255f);
+        cb.highlightedColor = cb.pressedColor = new Color(64f / 255f, 64f / 255f, 64f / 255f);
+        button.colors = cb;
+    }
+
+    private void SetButtonInactive(Button button, TextMeshProUGUI buttonText)
+    {
+        buttonText.color = new Color(50f / 255f, 50f / 255f, 50f / 255f);
+
+        ColorBlock cb = button.colors;
+        cb.normalColor = cb.selectedColor = Color.clear;
+        cb.highlightedColor = cb.pressedColor = new Color(216f / 255f, 216f / 255f, 216f / 255f);
+        button.colors = cb;
+    }
+
 
     private void AddLogMessage(string message)
     {
-        if (logMessages.Count >= 5)
+        if (logMessages.Count >= logCountLimit)
         {
             logMessages.RemoveAt(0);
         }
-        logMessages.Add(message);
-        UpdateStatusText();
+        string timestamp = System.DateTime.Now.ToString("HH:mm:ss");
+
+        logMessages.Add($"{timestamp}\t{message}");
+        UpdateEventsText();
     }
 
-    private void UpdateStatusText()
+    private void UpdateEventsText()
     {
         eventsText.text = "";
         for (int i = 0; i < logMessages.Count; i++)
@@ -295,9 +353,5 @@ public class DemoIntegration : MonoBehaviour
             audioController.StopMicrophone();
         }
         UpdateRecordButton();
-    }
-
-    private void UpdateListeningModeUI()
-    {
     }
 }
