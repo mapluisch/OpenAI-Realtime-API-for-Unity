@@ -5,17 +5,16 @@ using System.Threading.Tasks;
 using System.Net.WebSockets;
 using UnityEngine;
 using Newtonsoft.Json.Linq;
+using System.Collections.Generic;
 
 public class RealtimeAPIWrapper : MonoBehaviour
 {
     private ClientWebSocket ws;
     public string apiKey = "YOUR_API_KEY";
     public AudioController audioController;
-
     private StringBuilder messageBuffer = new StringBuilder();
     private StringBuilder transcriptBuffer = new StringBuilder();
     private bool isResponseInProgress = false;
-
     public static event Action OnWebSocketConnected;
     public static event Action OnWebSocketClosed;
     public static event Action OnSessionCreated;
@@ -32,26 +31,26 @@ public class RealtimeAPIWrapper : MonoBehaviour
     public static event Action OnResponseContentPartAdded;
     public static event Action OnResponseCancelled;
 
-    private async void Start()
+    private void Start() => AudioController.OnAudioRecorded += SendAudioToAPI;
+
+    public async void ConnectWebSocketButton()
     {
-        ws = new ClientWebSocket();
-        await ConnectWebSocket();
-        audioController.AudioRecorded += SendAudioToAPI;
+        if (ws != null) DisposeWebSocket();
+        else
+        {
+            ws = new ClientWebSocket();
+            await ConnectWebSocket();
+        }
     }
 
     private async Task ConnectWebSocket()
     {
-        Debug.Log("Connecting to WebSocket...");
-
         try
         {
             var uri = new Uri("wss://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview-2024-10-01");
             ws.Options.SetRequestHeader("Authorization", "Bearer " + apiKey);
             ws.Options.SetRequestHeader("OpenAI-Beta", "realtime=v1");
-
             await ws.ConnectAsync(uri, CancellationToken.None);
-
-            Debug.Log("WebSocket connection established.");
             OnWebSocketConnected?.Invoke();
             _ = ReceiveMessages();
         }
@@ -65,31 +64,23 @@ public class RealtimeAPIWrapper : MonoBehaviour
     {
         if (ws.State == WebSocketState.Open && isResponseInProgress)
         {
-
             var cancelMessage = new
             {
                 type = "response.cancel"
             };
-
             string jsonString = Newtonsoft.Json.JsonConvert.SerializeObject(cancelMessage);
             byte[] messageBytes = Encoding.UTF8.GetBytes(jsonString);
             await ws.SendAsync(new ArraySegment<byte>(messageBytes), WebSocketMessageType.Text, true, CancellationToken.None);
-
-            Debug.Log("Sent response.cancel event.");
             OnResponseCancelled?.Invoke();
             isResponseInProgress = false;
         }
     }
 
-
     private async void SendAudioToAPI(string base64AudioData)
     {
-        if (isResponseInProgress)
-        {
-            SendCancelEvent();
-        }
+        if (isResponseInProgress) SendCancelEvent();
 
-        if (ws.State == WebSocketState.Open)
+        if (ws != null && ws.State == WebSocketState.Open)
         {
             var eventMessage = new
             {
@@ -104,7 +95,6 @@ public class RealtimeAPIWrapper : MonoBehaviour
                     }
                 }
             };
-
             string jsonString = Newtonsoft.Json.JsonConvert.SerializeObject(eventMessage);
             byte[] messageBytes = Encoding.UTF8.GetBytes(jsonString);
             await ws.SendAsync(new ArraySegment<byte>(messageBytes), WebSocketMessageType.Text, true, CancellationToken.None);
@@ -118,107 +108,44 @@ public class RealtimeAPIWrapper : MonoBehaviour
                     instructions = "Please provide a transcript."
                 }
             };
-
             string responseJson = Newtonsoft.Json.JsonConvert.SerializeObject(responseMessage);
             byte[] responseBytes = Encoding.UTF8.GetBytes(responseJson);
             await ws.SendAsync(new ArraySegment<byte>(responseBytes), WebSocketMessageType.Text, true, CancellationToken.None);
-
-            Debug.Log("Audio and response request sent to API.");
-        }
-        else
-        {
-            Debug.LogError("WebSocket is closed. Audio could not be sent.");
         }
     }
 
     private async Task ReceiveMessages()
     {
-        var buffer = new byte[1024 * 256]; //256kb - feel free to tinker around here
+        var buffer = new byte[1024 * 256];
+        var messageHandlers = GetMessageHandlers();
 
-        while (ws.State == WebSocketState.Open)
+        while (ws.State == WebSocketState.Open || ws.State == WebSocketState.CloseReceived)
         {
             var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
             messageBuffer.Append(Encoding.UTF8.GetString(buffer, 0, result.Count));
 
+            if (ws.State == WebSocketState.CloseReceived)
+            {
+                Debug.Log("WebSocket close received, disposing current WS instance.");
+                DisposeWebSocket();
+                return;
+            }
+
             if (result.EndOfMessage)
             {
                 string fullMessage = messageBuffer.ToString();
+                messageBuffer.Clear();
 
                 if (!string.IsNullOrEmpty(fullMessage.Trim()))
                 {
                     try
                     {
                         JObject eventMessage = JObject.Parse(fullMessage);
-
                         string messageType = eventMessage["type"]?.ToString();
 
-                        if (messageType == "response.audio.delta")
+                        if (messageHandlers.TryGetValue(messageType, out var handler))
                         {
-                            string base64AudioData = eventMessage["delta"]?.ToString();
-                            if (!string.IsNullOrEmpty(base64AudioData))
-                            {
-                                byte[] pcmAudioData = Convert.FromBase64String(base64AudioData);
-                                audioController.EnqueueAudioData(pcmAudioData);
-                            }
-                        }
-                        else if (messageType == "response.audio_transcript.delta")
-                        {
-                            string transcriptPart = eventMessage["delta"]?.ToString();
-                            if (!string.IsNullOrEmpty(transcriptPart))
-                            {
-                                transcriptBuffer.Append(transcriptPart);
-                                OnTranscriptReceived?.Invoke(transcriptPart);
-                            }
-                        }
-                        else if (messageType == "conversation.item.created")
-                        {
-                            OnConversationItemCreated?.Invoke();
-                        }
-                        else if (messageType == "response.done")
-                        {
-                            if (!audioController.IsAudioPlaying())
-                            {
-                                isResponseInProgress = false;
-                            }
-                            OnResponseDone?.Invoke();
-                        }
-                        else if (messageType == "response.created")
-                        {
-                            transcriptBuffer.Clear();
-                            isResponseInProgress = true;
-                            OnResponseCreated?.Invoke();
-                        }
-                        else if (messageType == "session.created")
-                        {
-                            OnSessionCreated?.Invoke();
-                        }
-                        else if (messageType == "response.audio.done")
-                        {
-                            OnResponseAudioDone?.Invoke();
-                        }
-                        else if (messageType == "response.audio_transcript.done")
-                        {
-                            OnResponseAudioTranscriptDone?.Invoke();
-                        }
-                        else if (messageType == "response.content_part.done")
-                        {
-                            OnResponseContentPartDone?.Invoke();
-                        }
-                        else if (messageType == "response.output_item.done")
-                        {
-                            OnResponseOutputItemDone?.Invoke();
-                        }
-                        else if (messageType == "response.output_item.added")
-                        {
-                            OnResponseOutputItemAdded?.Invoke();
-                        }
-                        else if (messageType == "response.content_part.added")
-                        {
-                            OnResponseContentPartAdded?.Invoke();
-                        }
-                        else if (messageType == "rate_limits.updated")
-                        {
-                            OnRateLimitsUpdated?.Invoke();
+                            handler(eventMessage);
                         }
                         else
                         {
@@ -230,20 +157,86 @@ public class RealtimeAPIWrapper : MonoBehaviour
                         Debug.LogError("Error parsing JSON: " + ex.Message);
                     }
                 }
-
-                messageBuffer.Clear();
             }
         }
     }
 
-
-    private async void OnApplicationQuit()
+    private Dictionary<string, Action<JObject>> GetMessageHandlers()
     {
-        if (ws.State == WebSocketState.Open)
+        return new Dictionary<string, Action<JObject>>
+        {
+            { "response.audio.delta", HandleAudioDelta },
+            { "response.audio_transcript.delta", HandleTranscriptDelta },
+            { "conversation.item.created", _ => OnConversationItemCreated?.Invoke() },
+            { "response.done", HandleResponseDone },
+            { "response.created", HandleResponseCreated },
+            { "session.created", _ => OnSessionCreated?.Invoke() },
+            { "response.audio.done", _ => OnResponseAudioDone?.Invoke() },
+            { "response.audio_transcript.done", _ => OnResponseAudioTranscriptDone?.Invoke() },
+            { "response.content_part.done", _ => OnResponseContentPartDone?.Invoke() },
+            { "response.output_item.done", _ => OnResponseOutputItemDone?.Invoke() },
+            { "response.output_item.added", _ => OnResponseOutputItemAdded?.Invoke() },
+            { "response.content_part.added", _ => OnResponseContentPartAdded?.Invoke() },
+            { "rate_limits.updated", _ => OnRateLimitsUpdated?.Invoke() },
+            { "error", HandleError }
+        };
+    }
+
+    private void HandleAudioDelta(JObject eventMessage)
+    {
+        string base64AudioData = eventMessage["delta"]?.ToString();
+        if (!string.IsNullOrEmpty(base64AudioData))
+        {
+            byte[] pcmAudioData = Convert.FromBase64String(base64AudioData);
+            audioController.EnqueueAudioData(pcmAudioData);
+        }
+    }
+
+    private void HandleTranscriptDelta(JObject eventMessage)
+    {
+        string transcriptPart = eventMessage["delta"]?.ToString();
+        if (!string.IsNullOrEmpty(transcriptPart))
+        {
+            transcriptBuffer.Append(transcriptPart);
+            OnTranscriptReceived?.Invoke(transcriptPart);
+        }
+    }
+
+    private void HandleResponseDone(JObject eventMessage)
+    {
+        if (!audioController.IsAudioPlaying())
+        {
+            isResponseInProgress = false;
+        }
+        OnResponseDone?.Invoke();
+    }
+
+    private void HandleResponseCreated(JObject eventMessage)
+    {
+        transcriptBuffer.Clear();
+        isResponseInProgress = true;
+        OnResponseCreated?.Invoke();
+    }
+
+    private void HandleError(JObject eventMessage)
+    {
+        string errorMessage = eventMessage["error"]?["message"]?.ToString();
+        if (!string.IsNullOrEmpty(errorMessage))
+        {
+            Debug.LogError("OpenAI error: " + errorMessage);
+        }
+    }
+
+    private async void DisposeWebSocket()
+    {
+        if (ws != null && (ws.State == WebSocketState.Open || ws.State == WebSocketState.CloseReceived))
         {
             await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed by user", CancellationToken.None);
             ws.Dispose();
+            ws = null;
             OnWebSocketClosed?.Invoke();
         }
     }
+
+    private void OnApplicationQuit() => DisposeWebSocket();
 }

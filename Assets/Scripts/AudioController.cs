@@ -2,65 +2,292 @@ using System;
 using System.Collections.Generic;
 using UnityEngine;
 
-[RequireComponent(typeof(AudioSource))]
 public class AudioController : MonoBehaviour
 {
-    private AudioSource audioSource;
+    public ListeningMode listeningMode = ListeningMode.PushToTalk;
     public int sampleRate = 24000;
-    public bool interruptResponseOnNewRecording = false;
+    [SerializeField] private bool interruptResponseOnNewRecording = false;
+    [SerializeField] private float vadThreshold = 0.005f;
+    [SerializeField] private float vadSilenceDuration = 2f;
+    [SerializeField] private bool ignoreInitialMicrophoneFramesOnVAD = true;
+    private int framesToIgnore = 5;
+    private int ignoreFrameCount = 0;
+    private bool isVADRecording = false;
+    private float silenceTimer = 0f;
+    private int lastSamplePosition = 0;
+    private List<float> vadAudioData = new List<float>();
+    private AudioClip microphoneClip;
+    private AudioSource audioSource;
     private bool isPlayingAudio = false;
     private bool cancelPending = false;
-    private List<byte[]> audioBuffer = new List<byte[]>();
-
-    public delegate void OnAudioRecorded(string base64Audio);
-    public event OnAudioRecorded AudioRecorded;
+    private Queue<byte[]> audioBuffer = new Queue<byte[]>();
+    public static event Action<string> OnAudioRecorded;
+    private string microphoneDevice;
+    private bool ignoreInitialSpike = false;
+    public float currentVolumeLevel { get; private set; } = 0f;
+    public float[] frequencyData { get; private set; }
+    public int fftSampleSize = 1024;
+    public float[] aiFrequencyData { get; private set; }
 
     private void Start()
     {
         audioSource = GetComponent<AudioSource>();
         audioSource.loop = false;
+        if (Microphone.devices.Length == 0)
+        {
+            Debug.LogError("No microphone devices found.");
+            return;
+        }
+        microphoneDevice = Microphone.devices[0];
+        if (listeningMode == ListeningMode.VAD)
+        {
+            StartMicrophone();
+        }
+    }
+
+    private void Update()
+    {
+        if (Microphone.IsRecording(microphoneDevice))
+        {
+            UpdateCurrentVolumeAndFrequency();
+            if (listeningMode == ListeningMode.VAD)
+            {
+                PerformVAD();
+            }
+        }
+        else
+        {
+            frequencyData = null;
+        }
+        UpdateAIFrequencyData();
     }
 
     public void StartRecording()
     {
-        if (interruptResponseOnNewRecording) CancelAudioPlayback();
-
-        if (Microphone.devices.Length == 0) return;
-
+        if (interruptResponseOnNewRecording)
+            CancelAudioPlayback();
+        if (Microphone.devices.Length == 0)
+            return;
         ResetCancelPending();
-
-        string microphoneDevice = Microphone.devices[0];
-        audioSource.clip = Microphone.Start(microphoneDevice, false, 10, sampleRate);
-        Debug.Log("Recording started from microphone: " + microphoneDevice);
+        microphoneDevice = Microphone.devices[0];
+        microphoneClip = Microphone.Start(microphoneDevice, false, 10, sampleRate);
+        lastSamplePosition = 0;
     }
 
     public void StopRecording()
     {
-        if (Microphone.IsRecording(null))
+        if (Microphone.IsRecording(microphoneDevice))
         {
-            Microphone.End(null);
-            float[] audioData = new float[audioSource.clip.samples * audioSource.clip.channels];
-            audioSource.clip.GetData(audioData, 0);
-
+            int micPosition = Microphone.GetPosition(microphoneDevice);
+            int samples = micPosition;
+            float[] audioData = new float[samples];
+            microphoneClip.GetData(audioData, 0);
+            Microphone.End(microphoneDevice);
             string base64AudioData = ConvertFloatToPCM16AndBase64(audioData);
-            AudioRecorded?.Invoke(base64AudioData);
+            OnAudioRecorded?.Invoke(base64AudioData);
+        }
+        frequencyData = null;
+    }
+
+    public void StartMicrophone()
+    {
+        if (Microphone.devices.Length == 0)
+            return;
+        microphoneDevice = Microphone.devices[0];
+        microphoneClip = Microphone.Start(microphoneDevice, true, 10, sampleRate);
+        lastSamplePosition = 0;
+    }
+
+    public void StopMicrophone()
+    {
+        if (Microphone.IsRecording(microphoneDevice))
+        {
+            Microphone.End(microphoneDevice);
+        }
+        frequencyData = null;
+    }
+
+    private void UpdateCurrentVolumeAndFrequency()
+    {
+        int micPosition = Microphone.GetPosition(microphoneDevice);
+        int sampleDiff = micPosition - lastSamplePosition;
+        if (sampleDiff < 0)
+        {
+            sampleDiff += microphoneClip.samples;
+        }
+        if (sampleDiff == 0)
+        {
+            return;
+        }
+        float[] samples = new float[sampleDiff];
+        int startPosition = lastSamplePosition;
+        if (startPosition + sampleDiff <= microphoneClip.samples)
+        {
+            microphoneClip.GetData(samples, startPosition);
         }
         else
         {
-            Debug.LogWarning("No active recording found.");
+            int samplesToEnd = microphoneClip.samples - startPosition;
+            int samplesFromStart = sampleDiff - samplesToEnd;
+            float[] samplesPart1 = new float[samplesToEnd];
+            float[] samplesPart2 = new float[samplesFromStart];
+            microphoneClip.GetData(samplesPart1, startPosition);
+            microphoneClip.GetData(samplesPart2, 0);
+            Array.Copy(samplesPart1, 0, samples, 0, samplesToEnd);
+            Array.Copy(samplesPart2, 0, samples, samplesToEnd, samplesFromStart);
         }
+        float maxVolume = 0f;
+        foreach (var sample in samples)
+        {
+            float absSample = Mathf.Abs(sample);
+            if (absSample > maxVolume)
+            {
+                maxVolume = absSample;
+            }
+        }
+        currentVolumeLevel = maxVolume;
+        int fftSize = fftSampleSize;
+        float[] fftSamples = new float[fftSize];
+        int copyLength = Mathf.Min(samples.Length, fftSize);
+        Array.Copy(samples, samples.Length - copyLength, fftSamples, 0, copyLength);
+        frequencyData = new float[fftSize];
+        FFT(fftSamples, frequencyData);
+        lastSamplePosition = micPosition;
+    }
+
+    private void PerformVAD()
+    {
+        if (!Microphone.IsRecording(microphoneDevice))
+        {
+            lastSamplePosition = Microphone.GetPosition(microphoneDevice);
+            return;
+        }
+        int micPosition = Microphone.GetPosition(microphoneDevice);
+        int sampleDiff = micPosition - lastSamplePosition;
+        if (sampleDiff < 0)
+        {
+            sampleDiff += microphoneClip.samples;
+        }
+        if (sampleDiff == 0)
+        {
+            return;
+        }
+        float[] samples = new float[sampleDiff];
+        int startPosition = lastSamplePosition;
+        if (startPosition + sampleDiff <= microphoneClip.samples)
+        {
+            microphoneClip.GetData(samples, startPosition);
+        }
+        else
+        {
+            int samplesToEnd = microphoneClip.samples - startPosition;
+            int samplesFromStart = sampleDiff - samplesToEnd;
+            float[] samplesPart1 = new float[samplesToEnd];
+            float[] samplesPart2 = new float[samplesFromStart];
+            microphoneClip.GetData(samplesPart1, startPosition);
+            microphoneClip.GetData(samplesPart2, 0);
+            Array.Copy(samplesPart1, 0, samples, 0, samplesToEnd);
+            Array.Copy(samplesPart2, 0, samples, samplesToEnd, samplesFromStart);
+        }
+        float maxVolume = 0f;
+        foreach (var sample in samples)
+        {
+            float absSample = Mathf.Abs(sample);
+            if (absSample > maxVolume)
+            {
+                maxVolume = absSample;
+            }
+        }
+        currentVolumeLevel = maxVolume;
+        if (maxVolume > vadThreshold)
+        {
+            silenceTimer = 0f;
+            if (ignoreInitialMicrophoneFramesOnVAD)
+            {
+                if (ignoreInitialSpike)
+                {
+                    ignoreFrameCount++;
+                    if (ignoreFrameCount >= framesToIgnore)
+                    {
+                        ignoreInitialSpike = false;
+                        ignoreFrameCount = 0;
+                    }
+                }
+                else
+                {
+                    if (!isVADRecording)
+                    {
+                        StartVADRecording();
+                    }
+                    AppendVADData(samples);
+                }
+            }
+            else
+            {
+                if (!isVADRecording)
+                {
+                    StartVADRecording();
+                }
+                AppendVADData(samples);
+            }
+        }
+        else
+        {
+            if (isVADRecording)
+            {
+                silenceTimer += sampleDiff / (float)sampleRate;
+                if (silenceTimer >= vadSilenceDuration)
+                {
+                    StopVADRecording();
+                }
+                else
+                {
+                    AppendVADData(samples);
+                }
+            }
+            else
+            {
+                if (ignoreInitialMicrophoneFramesOnVAD)
+                {
+                    ignoreInitialSpike = true;
+                    ignoreFrameCount = 0;
+                }
+            }
+        }
+        lastSamplePosition = micPosition;
+    }
+
+    private void StartVADRecording()
+    {
+        isVADRecording = true;
+        vadAudioData.Clear();
+    }
+
+    private void AppendVADData(float[] samples)
+    {
+        vadAudioData.AddRange(samples);
+    }
+
+    private void StopVADRecording()
+    {
+        isVADRecording = false;
+        silenceTimer = 0f;
+        if (vadAudioData.Count > 0)
+        {
+            float[] audioData = vadAudioData.ToArray();
+            string base64AudioData = ConvertFloatToPCM16AndBase64(audioData);
+            OnAudioRecorded?.Invoke(base64AudioData);
+        }
+        vadAudioData.Clear();
     }
 
     public void EnqueueAudioData(byte[] pcmAudioData)
     {
         if (cancelPending)
         {
-            Debug.Log("Audio playback cancelled, not enqueuing new audio data.");
             return;
         }
-
-        audioBuffer.Add(pcmAudioData);
-
+        audioBuffer.Enqueue(pcmAudioData);
         if (!isPlayingAudio)
         {
             PlayBufferedAudio();
@@ -74,41 +301,46 @@ public class AudioController : MonoBehaviour
             ClearAudioBuffer();
             return;
         }
-
         if (audioBuffer.Count == 0)
         {
-            Debug.Log("Audio buffer is empty, nothing to play.");
             isPlayingAudio = false;
+            aiFrequencyData = null;
             return;
         }
-
         isPlayingAudio = true;
-        byte[] pcmAudioData = audioBuffer[0];
-        audioBuffer.RemoveAt(0);
-
+        byte[] pcmAudioData = audioBuffer.Dequeue();
         float[] floatData = ConvertPCM16ToFloat(pcmAudioData);
         AudioClip clip = AudioClip.Create("BufferedAudio", floatData.Length, 1, sampleRate, false);
         clip.SetData(floatData, 0);
         audioSource.clip = clip;
         audioSource.Play();
-
-        Debug.Log("Playing buffered audio...");
         Invoke("PlayBufferedAudio", clip.length);
+    }
+
+    private void UpdateAIFrequencyData()
+    {
+        if (!audioSource.isPlaying)
+        {
+            aiFrequencyData = null;
+            return;
+        }
+        int fftSize = fftSampleSize;
+        aiFrequencyData = new float[fftSize];
+        audioSource.GetSpectrumData(aiFrequencyData, 0, FFTWindow.BlackmanHarris);
     }
 
     public void CancelAudioPlayback()
     {
-        Debug.Log("Cancelling audio playback.");
         cancelPending = true;
         ClearAudioBuffer();
     }
 
     private void ClearAudioBuffer()
     {
-        Debug.Log("Clearing audio buffer.");
         audioBuffer.Clear();
         audioSource.Stop();
         isPlayingAudio = false;
+        aiFrequencyData = null;
     }
 
     public bool IsAudioPlaying()
@@ -116,11 +348,11 @@ public class AudioController : MonoBehaviour
         return audioSource.isPlaying || audioBuffer.Count > 0;
     }
 
-
     private float[] ConvertPCM16ToFloat(byte[] pcmAudioData)
     {
-        float[] floatData = new float[pcmAudioData.Length / 2];
-        for (int i = 0; i < floatData.Length; i++)
+        int length = pcmAudioData.Length / 2;
+        float[] floatData = new float[length];
+        for (int i = 0; i < length; i++)
         {
             short sample = BitConverter.ToInt16(pcmAudioData, i * 2);
             floatData[i] = sample / 32768f;
@@ -134,16 +366,64 @@ public class AudioController : MonoBehaviour
         for (int i = 0; i < audioData.Length; i++)
         {
             short value = (short)(Mathf.Clamp(audioData[i], -1f, 1f) * short.MaxValue);
-            byte[] bytes = BitConverter.GetBytes(value);
-            pcm16Audio[i * 2] = bytes[0];
-            pcm16Audio[i * 2 + 1] = bytes[1];
+            pcm16Audio[i * 2] = (byte)(value & 0xFF);
+            pcm16Audio[i * 2 + 1] = (byte)((value >> 8) & 0xFF);
         }
         return Convert.ToBase64String(pcm16Audio);
     }
 
     public void ResetCancelPending()
     {
-        Debug.Log("Resetting cancel state.");
         cancelPending = false;
+    }
+
+    private void FFT(float[] data, float[] spectrum)
+    {
+        int n = data.Length;
+        int m = (int)Mathf.Log(n, 2);
+        int j = 0;
+        for (int i = 0; i < n; i++)
+        {
+            if (i < j)
+            {
+                float temp = data[i];
+                data[i] = data[j];
+                data[j] = temp;
+            }
+            int k = n >> 1;
+            while (k >= 1 && k <= j)
+            {
+                j -= k;
+                k >>= 1;
+            }
+            j += k;
+        }
+        for (int l = 1; l <= m; l++)
+        {
+            int le = 1 << l;
+            int le2 = le >> 1;
+            float ur = 1.0f;
+            float ui = 0.0f;
+            float sr = Mathf.Cos(Mathf.PI / le2);
+            float si = -Mathf.Sin(Mathf.PI / le2);
+            for (int j1 = 0; j1 < le2; j1++)
+            {
+                for (int i = j1; i < n; i += le)
+                {
+                    int ip = i + le2;
+                    float tr = data[ip] * ur - 0 * ui;
+                    float ti = data[ip] * ui + 0 * ur;
+                    data[ip] = data[i] - tr;
+                    data[i] += tr;
+                }
+                float temp = ur;
+                ur = temp * sr - ui * si;
+                ui = temp * si + ui * sr;
+            }
+        }
+        for (int i = 0; i < n / 2; i++)
+        {
+            spectrum[i] = Mathf.Sqrt(data[i] * data[i] + data[n - i - 1] * data[n - i - 1]);
+        }
     }
 }

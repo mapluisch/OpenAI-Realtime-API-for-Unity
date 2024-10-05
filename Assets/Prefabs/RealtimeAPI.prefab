@@ -141,8 +141,12 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9799235ff1b5f46148fca9921bdef04f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  listeningMode: 0
   sampleRate: 24000
   interruptResponseOnNewRecording: 1
+  vadThreshold: 0.01
+  vadSilenceDuration: 2
+  ignoreInitialMicrophoneFramesOnVAD: 1
 --- !u!1 &8086852912749008722
 GameObject:
   m_ObjectHideFlags: 0
