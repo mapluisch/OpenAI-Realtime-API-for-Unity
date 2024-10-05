@@ -27,6 +27,7 @@ public class DemoIntegration : MonoBehaviour
 
     bool isRecording = false;
     List<string> logMessages = new List<string>();
+    List<string> conversationMessages = new List<string>();
 
     float[] userBarAmplitudes;
     float[] aiBarAmplitudes;
@@ -217,16 +218,28 @@ public class DemoIntegration : MonoBehaviour
 
     private void OnManualListeningMode()
     {
+        AddLogMessage("Manual listening mode activated (push to talk / spacebar).");
+
         audioController.listeningMode = ListeningMode.PushToTalk;
-        AddLogMessage("Manual listening mode activated (Push-to-Talk).");
+        audioController.StopMicrophone();
+
         UpdateListeningModeButtons();
+        UpdateRecordButton();
     }
 
     private void OnVADListeningMode()
     {
+        AddLogMessage("VAD listening mode activated (super basic client-side vad, threshold-based).");
+
         audioController.listeningMode = ListeningMode.VAD;
-        AddLogMessage("VAD listening mode activated.");
+        audioController.StartMicrophone();
+        if (isRecording)
+        {
+            StopRecording();
+        }
+
         UpdateListeningModeButtons();
+        UpdateRecordButton();
     }
 
     private void UpdateListeningModeButtons()
@@ -266,10 +279,8 @@ public class DemoIntegration : MonoBehaviour
 
     private void AddLogMessage(string message)
     {
-        if (logMessages.Count >= logCountLimit)
-        {
-            logMessages.RemoveAt(0);
-        }
+        if (logMessages.Count >= logCountLimit) logMessages.RemoveAt(0);
+
         string timestamp = System.DateTime.Now.ToString("HH:mm:ss");
 
         logMessages.Add($"{timestamp}\t{message}");
@@ -329,29 +340,27 @@ public class DemoIntegration : MonoBehaviour
 
     private void OnTranscriptReceived(string transcriptPart)
     {
-        conversationText.text += transcriptPart;
+        if (conversationMessages.Count >= logCountLimit) conversationMessages.RemoveAt(0);
+
+        string timestamp = System.DateTime.Now.ToString("HH:mm:ss");
+        conversationMessages.Add($"{timestamp}\t{transcriptPart}");
+
+        UpdateConversationText();
+    }
+
+    private void UpdateConversationText()
+    {
+        conversationText.text = "";
+        for (int i = 0; i < conversationMessages.Count; i++)
+        {
+            float alpha = Mathf.Lerp(0.2f, 1.0f, (float)(i + 1) / conversationMessages.Count);
+            string messageWithAlpha = $"<color=#{ColorUtility.ToHtmlStringRGBA(new Color(0, 0, 0, alpha))}>{conversationMessages[i]}</color>";
+            conversationText.text += messageWithAlpha + "\n";
+        }
     }
 
     private void OnResponseCreated()
     {
         AddLogMessage("response created.");
-    }
-
-    private void OnListeningModeChanged(int index)
-    {
-        audioController.listeningMode = (ListeningMode)index;
-        if (audioController.listeningMode == ListeningMode.VAD)
-        {
-            audioController.StartMicrophone();
-            if (isRecording)
-            {
-                StopRecording();
-            }
-        }
-        else
-        {
-            audioController.StopMicrophone();
-        }
-        UpdateRecordButton();
     }
 }
