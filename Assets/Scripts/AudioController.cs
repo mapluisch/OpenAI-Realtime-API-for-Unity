@@ -9,21 +9,15 @@ public class AudioController : MonoBehaviour
     [SerializeField] private bool interruptResponseOnNewRecording = false;
     [SerializeField] private float vadThreshold = 0.005f;
     [SerializeField] private float vadSilenceDuration = 2f;
-    [SerializeField] private bool ignoreInitialMicrophoneFramesOnVAD = true;
-    private int framesToIgnore = 5;
-    private int ignoreFrameCount = 0;
     private bool isVADRecording = false;
     private float silenceTimer = 0f;
     private int lastSamplePosition = 0;
-    private int lastVADSamplePosition = 0;
-    private List<float> vadAudioData = new List<float>();
     private AudioClip microphoneClip;
     private AudioSource audioSource;
     private bool isPlayingAudio = false;
     private bool cancelPending = false;
     private Queue<byte[]> audioBuffer = new Queue<byte[]>();
     private string microphoneDevice;
-    private bool ignoreInitialSpike = false;
     public float currentVolumeLevel = 0f;
     public float[] frequencyData { get; private set; }
     public int fftSampleSize = 1024;
@@ -199,8 +193,6 @@ public class AudioController : MonoBehaviour
 
         Microphone.End(microphoneDevice);
         StartMicrophone();
-
-        ignoreInitialSpike = true;
     }
 
     public void EnqueueAudioData(byte[] pcmAudioData)

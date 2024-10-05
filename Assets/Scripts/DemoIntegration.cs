@@ -20,7 +20,7 @@ public class DemoIntegration : MonoBehaviour
     [SerializeField] private Image[] frequencyBars;
     [SerializeField] private Image[] aiFrequencyBars;
 
-    int logCountLimit = 15;
+    int logCountLimit = 14;
 
     float maxFrequencyAmplitude = 4f;
     float aiMaxFrequencyAmplitude = 0.1f;
