@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -16,7 +17,6 @@ public class AudioController : MonoBehaviour
     private AudioSource audioSource;
     private bool isPlayingAudio = false;
     private bool cancelPending = false;
-    private Queue<byte[]> audioBuffer = new Queue<byte[]>();
     private string microphoneDevice;
     public float currentVolumeLevel = 0f;
     public float[] frequencyData { get; private set; }
@@ -25,6 +25,10 @@ public class AudioController : MonoBehaviour
     public static event Action<string> OnAudioRecorded;
     public static event Action OnVADRecordingStarted;
     public static event Action OnVADRecordingEnded;
+    private List<float> audioBuffer = new List<float>();
+    private AudioClip playbackClip;
+    private const int BUFFER_SIZE = 48000;
+    private const float MIN_BUFFER_TIME = 0.1f;
 
     private void Start()
     {
@@ -195,34 +199,66 @@ public class AudioController : MonoBehaviour
         StartMicrophone();
     }
 
+
     public void EnqueueAudioData(byte[] pcmAudioData)
     {
         if (cancelPending) return;
-        audioBuffer.Enqueue(pcmAudioData);
-        if (!isPlayingAudio) PlayBufferedAudio();
+
+        float[] floatData = ConvertPCM16ToFloat(pcmAudioData);
+        audioBuffer.AddRange(floatData);
+
+        if (!isPlayingAudio)
+        {
+            StartCoroutine(PlayAudioCoroutine());
+        }
     }
 
-    private void PlayBufferedAudio()
+    private IEnumerator PlayAudioCoroutine()
     {
-        if (cancelPending)
-        {
-            ClearAudioBuffer();
-            return;
-        }
-        if (audioBuffer.Count == 0)
-        {
-            isPlayingAudio = false;
-            aiFrequencyData = null;
-            return;
-        }
         isPlayingAudio = true;
-        byte[] pcmAudioData = audioBuffer.Dequeue();
-        float[] floatData = ConvertPCM16ToFloat(pcmAudioData);
-        AudioClip clip = AudioClip.Create("BufferedAudio", floatData.Length, 1, sampleRate, false);
-        clip.SetData(floatData, 0);
-        audioSource.clip = clip;
-        audioSource.Play();
-        Invoke("PlayBufferedAudio", clip.length);
+
+        while (isPlayingAudio)
+        {
+            if (audioBuffer.Count >= sampleRate * MIN_BUFFER_TIME)
+            {
+                int samplesToPlay = Mathf.Min(BUFFER_SIZE, audioBuffer.Count);
+                float[] audioChunk = new float[samplesToPlay];
+                audioBuffer.CopyTo(0, audioChunk, 0, samplesToPlay);
+                audioBuffer.RemoveRange(0, samplesToPlay);
+
+                playbackClip = AudioClip.Create("PlaybackClip", samplesToPlay, 1, sampleRate, false);
+                playbackClip.SetData(audioChunk, 0);
+
+                audioSource.clip = playbackClip;
+                audioSource.Play();
+
+                yield return new WaitForSeconds((float)samplesToPlay / sampleRate);
+            }
+            else if (audioBuffer.Count > 0)
+            {
+                float[] audioChunk = audioBuffer.ToArray();
+                audioBuffer.Clear();
+
+                playbackClip = AudioClip.Create("PlaybackClip", audioChunk.Length, 1, sampleRate, false);
+                playbackClip.SetData(audioChunk, 0);
+
+                audioSource.clip = playbackClip;
+                audioSource.Play();
+
+                yield return new WaitForSeconds((float)audioChunk.Length / sampleRate);
+            }
+            else if (audioBuffer.Count == 0 && !audioSource.isPlaying)
+            {
+                yield return new WaitForSeconds(0.1f);
+                if (audioBuffer.Count == 0) isPlayingAudio = false;
+            }
+            else
+            {
+                yield return null;
+            }
+        }
+
+        ClearAudioBuffer();
     }
 
     private void UpdateAIFrequencyData()
@@ -240,6 +276,7 @@ public class AudioController : MonoBehaviour
     public void CancelAudioPlayback()
     {
         cancelPending = true;
+        StopAllCoroutines();
         ClearAudioBuffer();
     }
 

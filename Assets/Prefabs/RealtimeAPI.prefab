@@ -146,7 +146,6 @@ MonoBehaviour:
   interruptResponseOnNewRecording: 1
   vadThreshold: 0.1
   vadSilenceDuration: 2
-  ignoreInitialMicrophoneFramesOnVAD: 0
   currentVolumeLevel: 0
   fftSampleSize: 1024
 --- !u!1 &8086852912749008722

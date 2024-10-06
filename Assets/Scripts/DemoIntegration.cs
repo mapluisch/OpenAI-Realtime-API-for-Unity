@@ -328,7 +328,7 @@ public class DemoIntegration : MonoBehaviour
         ColorBlock cb = connectButton.colors;
         cb.normalColor = cb.selectedColor = new Color(15f / 255f, 15f / 255f, 15f / 255f);
         cb.highlightedColor = cb.pressedColor = new Color(64f / 255f, 64f / 255f, 64f / 255f);
-        connectButton.colors = cb;
+        if (connectButton) connectButton.colors = cb;
     }
 
     private void OnSessionCreated()

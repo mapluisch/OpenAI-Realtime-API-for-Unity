@@ -79,7 +79,6 @@ public class RealtimeAPIWrapper : MonoBehaviour
     private async void SendAudioToAPI(string base64AudioData)
     {
         if (isResponseInProgress) SendCancelEvent();
-
         if (ws != null && ws.State == WebSocketState.Open)
         {
             var eventMessage = new
@@ -95,6 +94,7 @@ public class RealtimeAPIWrapper : MonoBehaviour
                     }
                 }
             };
+
             string jsonString = Newtonsoft.Json.JsonConvert.SerializeObject(eventMessage);
             byte[] messageBytes = Encoding.UTF8.GetBytes(jsonString);
             await ws.SendAsync(new ArraySegment<byte>(messageBytes), WebSocketMessageType.Text, true, CancellationToken.None);
@@ -116,7 +116,7 @@ public class RealtimeAPIWrapper : MonoBehaviour
 
     private async Task ReceiveMessages()
     {
-        var buffer = new byte[1024 * 256];
+        var buffer = new byte[1024 * 128];
         var messageHandlers = GetMessageHandlers();
 
         while (ws.State == WebSocketState.Open || ws.State == WebSocketState.CloseReceived)
