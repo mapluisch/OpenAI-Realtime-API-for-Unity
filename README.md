@@ -1,6 +1,6 @@
-<h1 align="center">OpenAI Realtime API Integration for Unity</h1>
-
 <div align="center">
+  <h1 align="center">OpenAI Realtime API Integration for Unity</h1  >
+  <img src="https://martinpluisch.com/openai-realtime-api">
   <p><em>Implementation of OpenAI's Realtime API in Unity - record microphone audio and receive real-time low-latency responses.</em></p>
 </div>
 
