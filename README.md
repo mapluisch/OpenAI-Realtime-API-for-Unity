@@ -13,7 +13,7 @@ On October 1st, [OpenAI introduced their Realtime API](https://openai.com/index/
 This (WIP) project integrates the API into a Unity application, allowing users to build low-latency, multi-modal conversational apps that support both text and audio input/output, as well as function calling (via [OpenAI Realtime API documentation](https://platform.openai.com/docs/guides/realtime)).
 
 Specifically, this package allows you to integrate real-time low-latency voice conversations with OpenAI's TTS/STT conversational models (via push-to-talk or VAD).
-I've integrated transcriptions, natural speech interruption handling, and (a super dumb) client-side VAD.
+I've integrated transcriptions, natural speech interruption handling, and client-side VAD (as per [Whisper's VAD](https://raw.githubusercontent.com/Macoron/whisper.unity/275406258aca21fe7753cf0724a65f06fd464eea/Packages/com.whisper.unity/Runtime/Utils/AudioUtils.cs)).
 
 Tested with Unity version 2022.3.45f1 (on macOS, but it should work on every platform that supports `Newtonsoft.Json`).
 
@@ -64,7 +64,7 @@ This project is still very much a work in progress. I'd like to extend it in the
 
 - [ ] Server-Side VAD (no guarantees, though)
 - [ ] Text / chat input -> TTS + transcription output
-- [x] Client-Side VAD (very, very basic)
+- [x] Client-Side VAD
 - [x] Interruption handling
 
 
