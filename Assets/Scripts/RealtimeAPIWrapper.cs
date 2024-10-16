@@ -10,11 +10,13 @@ using System.Collections.Generic;
 public class RealtimeAPIWrapper : MonoBehaviour
 {
     private ClientWebSocket ws;
-    public string apiKey = "YOUR_API_KEY";
-    public AudioController audioController;
+    [SerializeField] string apiKey = "YOUR_API_KEY";
+    public AudioPlayer audioPlayer;
+    public AudioRecorder audioRecorder;
     private StringBuilder messageBuffer = new StringBuilder();
     private StringBuilder transcriptBuffer = new StringBuilder();
     private bool isResponseInProgress = false;
+
     public static event Action OnWebSocketConnected;
     public static event Action OnWebSocketClosed;
     public static event Action OnSessionCreated;
@@ -31,8 +33,13 @@ public class RealtimeAPIWrapper : MonoBehaviour
     public static event Action OnResponseContentPartAdded;
     public static event Action OnResponseCancelled;
 
-    private void Start() => AudioController.OnAudioRecorded += SendAudioToAPI;
+    private void Start() => AudioRecorder.OnAudioRecorded += SendAudioToAPI;
+    private void OnApplicationQuit() => DisposeWebSocket();
 
+
+    /// <summary>
+    /// connects or disconnects websocket when button is pressed
+    /// </summary>
     public async void ConnectWebSocketButton()
     {
         if (ws != null) DisposeWebSocket();
@@ -43,6 +50,9 @@ public class RealtimeAPIWrapper : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// establishes websocket connection to the api
+    /// </summary>
     private async Task ConnectWebSocket()
     {
         try
@@ -56,10 +66,13 @@ public class RealtimeAPIWrapper : MonoBehaviour
         }
         catch (Exception e)
         {
-            Debug.LogError("WebSocket connection failed: " + e.Message);
+            Debug.LogError("websocket connection failed: " + e.Message);
         }
     }
 
+    /// <summary>
+    /// sends a cancel event to api if response is in progress
+    /// </summary>
     private async void SendCancelEvent()
     {
         if (ws.State == WebSocketState.Open && isResponseInProgress)
@@ -76,9 +89,14 @@ public class RealtimeAPIWrapper : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// sends recorded audio to the api
+    /// </summary>
     private async void SendAudioToAPI(string base64AudioData)
     {
-        if (isResponseInProgress) SendCancelEvent();
+        if (isResponseInProgress)
+            SendCancelEvent();
+
         if (ws != null && ws.State == WebSocketState.Open)
         {
             var eventMessage = new
@@ -114,6 +132,9 @@ public class RealtimeAPIWrapper : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// receives messages from websocket and handles them
+    /// </summary>
     private async Task ReceiveMessages()
     {
         var buffer = new byte[1024 * 128];
@@ -126,7 +147,7 @@ public class RealtimeAPIWrapper : MonoBehaviour
 
             if (ws.State == WebSocketState.CloseReceived)
             {
-                Debug.Log("WebSocket close received, disposing current WS instance.");
+                Debug.Log("websocket close received, disposing current ws instance.");
                 DisposeWebSocket();
                 return;
             }
@@ -143,24 +164,23 @@ public class RealtimeAPIWrapper : MonoBehaviour
                         JObject eventMessage = JObject.Parse(fullMessage);
                         string messageType = eventMessage["type"]?.ToString();
 
-                        if (messageHandlers.TryGetValue(messageType, out var handler))
-                        {
-                            handler(eventMessage);
-                        }
-                        else
-                        {
-                            Debug.Log("Unhandled message type: " + messageType);
-                        }
+                        if (messageHandlers.TryGetValue(messageType, out var handler)) handler(eventMessage);
+
+                        else Debug.Log("unhandled message type: " + messageType);
+
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError("Error parsing JSON: " + ex.Message);
+                        Debug.LogError("error parsing json: " + ex.Message);
                     }
                 }
             }
         }
     }
 
+    /// <summary>
+    /// returns dictionary of message handlers for different message types
+    /// </summary>
     private Dictionary<string, Action<JObject>> GetMessageHandlers()
     {
         return new Dictionary<string, Action<JObject>>
@@ -182,16 +202,22 @@ public class RealtimeAPIWrapper : MonoBehaviour
         };
     }
 
+    /// <summary>
+    /// handles incoming audio delta messages from api
+    /// </summary>
     private void HandleAudioDelta(JObject eventMessage)
     {
         string base64AudioData = eventMessage["delta"]?.ToString();
         if (!string.IsNullOrEmpty(base64AudioData))
         {
             byte[] pcmAudioData = Convert.FromBase64String(base64AudioData);
-            audioController.EnqueueAudioData(pcmAudioData);
+            audioPlayer.EnqueueAudioData(pcmAudioData);
         }
     }
 
+    /// <summary>
+    /// handles incoming transcript delta messages from api
+    /// </summary>
     private void HandleTranscriptDelta(JObject eventMessage)
     {
         string transcriptPart = eventMessage["delta"]?.ToString();
@@ -202,15 +228,21 @@ public class RealtimeAPIWrapper : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// handles response.done message - checks if audio is still playing
+    /// </summary>
     private void HandleResponseDone(JObject eventMessage)
     {
-        if (!audioController.IsAudioPlaying())
+        if (!audioPlayer.IsAudioPlaying())
         {
             isResponseInProgress = false;
         }
         OnResponseDone?.Invoke();
     }
 
+    /// <summary>
+    /// handles response.created message - resets transcript buffer
+    /// </summary>
     private void HandleResponseCreated(JObject eventMessage)
     {
         transcriptBuffer.Clear();
@@ -218,15 +250,21 @@ public class RealtimeAPIWrapper : MonoBehaviour
         OnResponseCreated?.Invoke();
     }
 
+    /// <summary>
+    /// handles error messages from api
+    /// </summary>
     private void HandleError(JObject eventMessage)
     {
         string errorMessage = eventMessage["error"]?["message"]?.ToString();
         if (!string.IsNullOrEmpty(errorMessage))
         {
-            Debug.LogError("OpenAI error: " + errorMessage);
+            Debug.LogError("openai error: " + errorMessage);
         }
     }
 
+    /// <summary>
+    /// disposes the websocket connection
+    /// </summary>
     private async void DisposeWebSocket()
     {
         if (ws != null && (ws.State == WebSocketState.Open || ws.State == WebSocketState.CloseReceived))
@@ -238,5 +276,4 @@ public class RealtimeAPIWrapper : MonoBehaviour
         }
     }
 
-    private void OnApplicationQuit() => DisposeWebSocket();
 }

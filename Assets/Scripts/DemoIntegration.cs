@@ -5,9 +5,12 @@ using System.Collections.Generic;
 
 public class DemoIntegration : MonoBehaviour
 {
-    [SerializeField] private AudioController audioController;
+    [SerializeField] private KeyCode pushToTalkKey = KeyCode.Space;
+    [SerializeField] private AudioRecorder audioRecorder;
+    [SerializeField] private AudioPlayer audioPlayer;
     [SerializeField] private TextMeshProUGUI eventsText;
     [SerializeField] private TextMeshProUGUI conversationText;
+    [SerializeField] private TextMeshProUGUI vadEnergyText;
     [SerializeField] private Button pushToTalkButton;
     [SerializeField] private Button connectButton;
     [SerializeField] private TextMeshProUGUI pushToTalkButtonText;
@@ -30,7 +33,6 @@ public class DemoIntegration : MonoBehaviour
     List<string> conversationMessages = new List<string>();
     string currentConversationLine = "";
 
-
     float[] userBarAmplitudes;
     float[] aiBarAmplitudes;
     float barSmoothingSpeed = 5f;
@@ -46,8 +48,8 @@ public class DemoIntegration : MonoBehaviour
         RealtimeAPIWrapper.OnTranscriptReceived += OnTranscriptReceived;
         RealtimeAPIWrapper.OnResponseCreated += OnResponseCreated;
 
-        AudioController.OnVADRecordingStarted += OnVADRecordingStarted;
-        AudioController.OnVADRecordingEnded += OnVADRecordingEnded;
+        AudioRecorder.OnVADRecordingStarted += OnVADRecordingStarted;
+        AudioRecorder.OnVADRecordingEnded += OnVADRecordingEnded;
 
         manualListeningButton.onClick.AddListener(OnManualListeningMode);
         vadListeningButton.onClick.AddListener(OnVADListeningMode);
@@ -61,27 +63,24 @@ public class DemoIntegration : MonoBehaviour
 
     private void Update()
     {
-        if (audioController.listeningMode == ListeningMode.PushToTalk)
+        if (audioRecorder.listeningMode == ListeningMode.PushToTalk)
         {
-            if (Input.GetKeyDown(KeyCode.Space) && !isRecording)
-            {
-                StartRecording();
-            }
-            if (Input.GetKeyUp(KeyCode.Space) && isRecording)
-            {
-                StopRecording();
-            }
+            if (Input.GetKeyDown(pushToTalkKey) && !isRecording) StartRecording();
+            if (Input.GetKeyUp(pushToTalkKey) && isRecording) StopRecording();
         }
         UpdateFrequencyBars();
         UpdateAIFrequencyBars();
     }
 
+    /// <summary>
+    /// updates frequency bars for user audio visualization
+    /// </summary>
     private void UpdateFrequencyBars()
     {
         if (frequencyBars == null || frequencyBars.Length == 0)
             return;
 
-        if (!isRecording && audioController.listeningMode == ListeningMode.PushToTalk)
+        if (!isRecording && audioRecorder.listeningMode == ListeningMode.PushToTalk)
         {
             for (int i = 0; i < frequencyBars.Length; i++)
             {
@@ -91,7 +90,7 @@ public class DemoIntegration : MonoBehaviour
             return;
         }
 
-        float[] spectrum = audioController.frequencyData;
+        float[] spectrum = audioRecorder.frequencyData;
         if (spectrum == null || spectrum.Length == 0)
         {
             for (int i = 0; i < frequencyBars.Length; i++)
@@ -102,8 +101,8 @@ public class DemoIntegration : MonoBehaviour
             return;
         }
 
-        float sampleRate = audioController.sampleRate;
-        int fftSize = audioController.fftSampleSize;
+        float sampleRate = audioRecorder.sampleRate;
+        int fftSize = audioRecorder.fftSampleSize;
         float nyquist = sampleRate / 2f;
         float freqPerBin = nyquist / fftSize;
         float[] freqBands = new float[] { 85f, 160f, 255f, 350f, 500f, 1000f, 2000f, 3000f, 4000f, nyquist };
@@ -124,13 +123,20 @@ public class DemoIntegration : MonoBehaviour
             userBarAmplitudes[i] = Mathf.Lerp(userBarAmplitudes[i], amplitude, Time.deltaTime * barSmoothingSpeed);
             frequencyBars[i].fillAmount = userBarAmplitudes[i];
         }
+
+
+        if (audioRecorder.listeningMode == ListeningMode.VAD)
+            vadEnergyText.text = "nrg: " + AudioProcessingUtils.energyLast.ToString("0.0000E+0");
     }
 
+    /// <summary>
+    /// updates frequency bars for ai audio visualization
+    /// </summary>
     private void UpdateAIFrequencyBars()
     {
         if (aiFrequencyBars == null || aiFrequencyBars.Length == 0)
             return;
-        float[] spectrum = audioController.aiFrequencyData;
+        float[] spectrum = audioPlayer.aiFrequencyData;
         if (spectrum == null || spectrum.Length == 0)
         {
             for (int i = 0; i < aiFrequencyBars.Length; i++)
@@ -141,8 +147,8 @@ public class DemoIntegration : MonoBehaviour
             return;
         }
 
-        float sampleRate = audioController.sampleRate;
-        int fftSize = audioController.fftSampleSize;
+        float sampleRate = audioPlayer.sampleRate;
+        int fftSize = audioPlayer.fftSampleSize;
         float nyquist = sampleRate / 2f;
         float freqPerBin = nyquist / fftSize;
         float[] freqBands = new float[] { 85f, 160f, 255f, 350f, 500f, 1000f, 2000f, 3000f, 4000f, nyquist };
@@ -165,43 +171,48 @@ public class DemoIntegration : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// handles push-to-talk button press
+    /// </summary>
     private void OnRecordButtonPressed()
     {
-        if (audioController.listeningMode == ListeningMode.PushToTalk)
+        if (audioRecorder.listeningMode == ListeningMode.PushToTalk)
         {
-            if (isRecording)
-            {
-                StopRecording();
-            }
-            else
-            {
-                StartRecording();
-            }
+            if (isRecording) StopRecording();
+            else StartRecording();
         }
     }
 
+    /// <summary>
+    /// starts audio recording
+    /// </summary>
     private void StartRecording()
     {
-        audioController.StartRecording();
+        audioRecorder.StartRecording();
         isRecording = true;
         AddLogMessage("recording...");
         UpdateRecordButton();
     }
 
+    /// <summary>
+    /// stops audio recording
+    /// </summary>
     private void StopRecording()
     {
-        audioController.StopRecording();
+        audioRecorder.StopRecording();
         isRecording = false;
         AddLogMessage("recording stopped. sending audio...");
         UpdateRecordButton();
     }
 
-    private void OnVADRecordingStarted() => AddLogMessage("VAD recording started...");
-    private void OnVADRecordingEnded() => AddLogMessage("VAD recording ended.");
 
+
+    /// <summary>
+    /// updates the record button UI
+    /// </summary>
     private void UpdateRecordButton()
     {
-        if (audioController.listeningMode == ListeningMode.PushToTalk)
+        if (audioRecorder.listeningMode == ListeningMode.PushToTalk)
         {
             pushToTalkButton.interactable = true;
             if (isRecording)
@@ -225,46 +236,57 @@ public class DemoIntegration : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// activates manual listening mode
+    /// </summary>
     private void OnManualListeningMode()
     {
-        AddLogMessage("Manual listening mode activated (push to talk / spacebar).");
+        AddLogMessage("manual listening mode activated (push to talk / spacebar).");
 
-        audioController.listeningMode = ListeningMode.PushToTalk;
-        audioController.StopMicrophone();
+        audioRecorder.listeningMode = ListeningMode.PushToTalk;
+        audioRecorder.StopMicrophone();
 
         UpdateListeningModeButtons();
         UpdateRecordButton();
+
+        vadEnergyText.text = "";
     }
 
+    /// <summary>
+    /// activates VAD listening mode
+    /// </summary>
     private void OnVADListeningMode()
     {
         AddLogMessage("VAD listening mode activated (super basic client-side vad, threshold-based).");
 
-        audioController.listeningMode = ListeningMode.VAD;
-        audioController.StartMicrophone();
-        if (isRecording)
-        {
-            StopRecording();
-        }
+        audioRecorder.listeningMode = ListeningMode.VAD;
+        audioRecorder.StartMicrophone();
+        if (isRecording) StopRecording();
 
         UpdateListeningModeButtons();
         UpdateRecordButton();
     }
 
+    /// <summary>
+    /// updates listening mode buttons UI
+    /// </summary>
     private void UpdateListeningModeButtons()
     {
-        if (audioController.listeningMode == ListeningMode.PushToTalk)
+        if (audioRecorder.listeningMode == ListeningMode.PushToTalk)
         {
             SetButtonActive(manualListeningButton, manualListeningButtonText);
             SetButtonInactive(vadListeningButton, vadListeningButtonText);
         }
-        else if (audioController.listeningMode == ListeningMode.VAD)
+        else if (audioRecorder.listeningMode == ListeningMode.VAD)
         {
             SetButtonActive(vadListeningButton, vadListeningButtonText);
             SetButtonInactive(manualListeningButton, manualListeningButtonText);
         }
     }
 
+    /// <summary>
+    /// sets a button to active state
+    /// </summary>
     private void SetButtonActive(Button button, TextMeshProUGUI buttonText)
     {
         buttonText.color = Color.white;
@@ -275,6 +297,9 @@ public class DemoIntegration : MonoBehaviour
         button.colors = cb;
     }
 
+    /// <summary>
+    /// sets a button to inactive state
+    /// </summary>
     private void SetButtonInactive(Button button, TextMeshProUGUI buttonText)
     {
         buttonText.color = new Color(50f / 255f, 50f / 255f, 50f / 255f);
@@ -285,7 +310,9 @@ public class DemoIntegration : MonoBehaviour
         button.colors = cb;
     }
 
-
+    /// <summary>
+    /// adds a message to the log
+    /// </summary>
     private void AddLogMessage(string message)
     {
         if (logMessages.Count >= logCountLimit) logMessages.RemoveAt(0);
@@ -296,6 +323,9 @@ public class DemoIntegration : MonoBehaviour
         UpdateEventsText();
     }
 
+    /// <summary>
+    /// updates the events text UI (line-idx based color-fade)
+    /// </summary>
     private void UpdateEventsText()
     {
         eventsText.text = "";
@@ -307,6 +337,9 @@ public class DemoIntegration : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// called when new websocket is connected - changes UI button states
+    /// </summary>
     private void OnWebSocketConnected()
     {
         AddLogMessage("connection established.");
@@ -319,6 +352,9 @@ public class DemoIntegration : MonoBehaviour
         connectButton.colors = cb;
     }
 
+    /// <summary>
+    /// called when new websocket is closed - changes UI button states
+    /// </summary>
     private void OnWebSocketClosed()
     {
         AddLogMessage("connection closed.");
@@ -331,11 +367,11 @@ public class DemoIntegration : MonoBehaviour
         if (connectButton) connectButton.colors = cb;
     }
 
-    private void OnSessionCreated()
-    {
-        AddLogMessage("session created.");
-    }
 
+
+    /// <summary>
+    /// called when new conversation item is created - cleans current transcript line for new chunks
+    /// </summary>
     private void OnConversationItemCreated()
     {
         AddLogMessage("conversation item created.");
@@ -351,11 +387,10 @@ public class DemoIntegration : MonoBehaviour
     }
 
 
-    private void OnResponseDone()
-    {
-        AddLogMessage("response done.");
-    }
 
+    /// <summary>
+    /// called when new transcript chunk is received
+    /// </summary>
     private void OnTranscriptReceived(string transcriptPart)
     {
         if (string.IsNullOrEmpty(currentConversationLine))
@@ -369,7 +404,9 @@ public class DemoIntegration : MonoBehaviour
         UpdateConversationTextInPlace();
     }
 
-
+    /// <summary>
+    /// updates the conversation text in place
+    /// </summary>
     private void UpdateConversationTextInPlace()
     {
         conversationText.text = "";
@@ -384,6 +421,9 @@ public class DemoIntegration : MonoBehaviour
         conversationText.text += $"<color=#{ColorUtility.ToHtmlStringRGBA(new Color(0, 0, 0, 1.0f))}>{currentConversationLine}</color>";
     }
 
+    /// <summary>
+    /// updates the conversation text UI
+    /// </summary>
     private void UpdateConversationText()
     {
         conversationText.text = "";
@@ -396,8 +436,9 @@ public class DemoIntegration : MonoBehaviour
         }
     }
 
-    private void OnResponseCreated()
-    {
-        AddLogMessage("response created.");
-    }
+    private void OnSessionCreated() => AddLogMessage("session created.");
+    private void OnResponseCreated() => AddLogMessage("response created.");
+    private void OnResponseDone() => AddLogMessage("response done.");
+    private void OnVADRecordingStarted() => AddLogMessage("VAD recording started...");
+    private void OnVADRecordingEnded() => AddLogMessage("VAD recording ended.");
 }

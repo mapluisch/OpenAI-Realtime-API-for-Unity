@@ -392,17 +392,6 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 5337751238952555557, guid: fc531736d51444c8280c8d93c32c7c33, type: 3}
   m_PrefabInstance: {fileID: 6491429648409679553}
   m_PrefabAsset: {fileID: 0}
---- !u!114 &1157521912 stripped
-MonoBehaviour:
-  m_CorrespondingSourceObject: {fileID: 68441443065667448, guid: 5ca84f8d7b82048e4ba92610cbf110e9, type: 3}
-  m_PrefabInstance: {fileID: 909518194653723852}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 0}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9799235ff1b5f46148fca9921bdef04f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
 --- !u!1 &1990000876
 GameObject:
   m_ObjectHideFlags: 0
@@ -562,6 +551,28 @@ PrefabInstance:
     m_AddedGameObjects: []
     m_AddedComponents: []
   m_SourcePrefab: {fileID: 100100000, guid: 5ca84f8d7b82048e4ba92610cbf110e9, type: 3}
+--- !u!114 &909518194653723853 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 5778159951835551788, guid: 5ca84f8d7b82048e4ba92610cbf110e9, type: 3}
+  m_PrefabInstance: {fileID: 909518194653723852}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 158779b4cfa684eadbc49287121f2c45, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+--- !u!114 &909518194653723854 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 4277790966370773839, guid: 5ca84f8d7b82048e4ba92610cbf110e9, type: 3}
+  m_PrefabInstance: {fileID: 909518194653723852}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 10dcd261ab0cf4839a08d9c49ec28b50, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1001 &6491429648409679553
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -859,9 +870,13 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5488567229014774107, guid: fc531736d51444c8280c8d93c32c7c33, type: 3}
-      propertyPath: audioController
+      propertyPath: audioPlayer
       value: 
-      objectReference: {fileID: 1157521912}
+      objectReference: {fileID: 909518194653723854}
+    - target: {fileID: 5488567229014774107, guid: fc531736d51444c8280c8d93c32c7c33, type: 3}
+      propertyPath: audioRecorder
+      value: 
+      objectReference: {fileID: 909518194653723853}
     - target: {fileID: 5539276234762005852, guid: fc531736d51444c8280c8d93c32c7c33, type: 3}
       propertyPath: m_AnchorMax.y
       value: 0

@@ -10,9 +10,10 @@ GameObject:
   m_Component:
   - component: {fileID: 6875561144310920953}
   - component: {fileID: 7521549165741144525}
-  - component: {fileID: 68441443065667448}
+  - component: {fileID: 5778159951835551788}
+  - component: {fileID: 4277790966370773839}
   m_Layer: 0
-  m_Name: AudioController
+  m_Name: Audio
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -129,7 +130,7 @@ AudioSource:
     m_PreInfinity: 2
     m_PostInfinity: 2
     m_RotationOrder: 4
---- !u!114 &68441443065667448
+--- !u!114 &5778159951835551788
 MonoBehaviour:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -138,15 +139,29 @@ MonoBehaviour:
   m_GameObject: {fileID: 5144007666192891506}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 9799235ff1b5f46148fca9921bdef04f, type: 3}
+  m_Script: {fileID: 11500000, guid: 158779b4cfa684eadbc49287121f2c45, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   listeningMode: 0
   sampleRate: 24000
-  interruptResponseOnNewRecording: 1
-  vadThreshold: 0.1
-  vadSilenceDuration: 2
-  currentVolumeLevel: 0
+  interruptResponseOnNewRecording: 0
+  vadEnergyThreshold: 2
+  vadSilenceDuration: 1.5
+  vadFreqThreshold: 1
+  fftSampleSize: 1024
+--- !u!114 &4277790966370773839
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 5144007666192891506}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 10dcd261ab0cf4839a08d9c49ec28b50, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  sampleRate: 24000
   fftSampleSize: 1024
 --- !u!1 &8086852912749008722
 GameObject:
@@ -194,4 +209,5 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   apiKey: 
-  audioController: {fileID: 68441443065667448}
+  audioPlayer: {fileID: 4277790966370773839}
+  audioRecorder: {fileID: 5778159951835551788}
