@@ -1,0 +1,29 @@
+{
+    "name": "com.mapluisch.openai-realtime-api-for-unity",
+    "version": "1.0.2",
+    "displayName": "OpenAI-Realtime-API-for-Unity",
+    "description": "OpenAI Realtime API Integration for Unity",
+    "unity": "2022.3",
+    "documentationUrl": "https://github.com/mapluisch/OpenAI-Realtime-API-for-Unity",
+    "changelogUrl": "",
+    "licensesUrl": "https://github.com/mapluisch/OpenAI-Realtime-API-for-Unity/blob/main/LICENSE",
+    "dependencies": {
+        "com.unity.nuget.newtonsoft-json": "3.2.1"
+    },
+    "keywords": [
+        "OpenAI",
+        "Realtime API"
+    ],
+    "author": {
+        "name": "mapluisch",
+        "email": "",
+        "url": "https://github.com/mapluisch/"
+    },
+    "samples": [
+        {
+            "displayName": "Usage samples",
+            "description": "Contains samples",
+            "path": "Samples~/Sample"
+        }
+    ]
+}
